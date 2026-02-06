@@ -79,7 +79,7 @@ export function DepartmentCard({ department, onJoin, onViewDetails }: Department
             <p className="text-xs text-muted-foreground">Posts</p>
           </div>
           <div className="text-center">
-            <p className="font-semibold text-sm">{Math.floor(Math.random() * 100) + 1}</p>
+            <p className="font-semibold text-sm">{department.members * 3}</p>
             <p className="text-xs text-muted-foreground">Reach</p>
           </div>
         </div>

@@ -1,188 +1,312 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { MessageCircle, Share2, Download, ZoomIn, Zap } from "lucide-react"
-import { PostDetailsModal } from "./post-details-modal"
+import { MessageCircle, Share2, Download, ZoomIn, Zap, ChevronDown, ChevronUp } from "lucide-react"
+import { CommentSection } from "./comment-section"
+import { postsApi } from "@/lib/api"
+import { toast } from "sonner"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface Post {
-  id: string
-  author: string
-  username: string
-  avatar: string
-  location: string
-  date: string
-  department: string
+  id: string | number
+  user_id: number
+  author_name: string
+  author_username: string
+  author_avatar: string
+  city: string
+  area?: string
+  state: string
+  country: string
+  post_date: string
+  department_name?: string
   content: string
-  mediaType: "photo" | "video" | "audio"
-  mediaUrl: string
-  likes: number
-  comments: number
-  shares: number
+  media_type: "photo" | "video" | "audio" | "none"
+  media_url: string | null
+  likes_count: number
+  comments_count: number
+  shares_count: number
+  isLikedByUser?: boolean
+  isSharedByUser?: boolean
 }
 
-const mockPosts: Post[] = [
-  {
-    id: "1",
-    author: "Sarah Johnson",
-    username: "@sarahjohn",
-    avatar: "SJ",
-    location: "Mylapore, Chennai",
-    date: "Today",
-    department: "City Events",
-    content: "Amazing sunset view from Marina Beach! The colors today were incredible.",
-    mediaType: "photo",
-    mediaUrl: "/sunset-beach-marina.jpg",
-    likes: 342,
-    comments: 28,
-    shares: 15,
-  },
-  {
-    id: "2",
-    author: "Raj Kumar",
-    username: "@rajkumar",
-    avatar: "RK",
-    location: "Indiranagar, Bangalore",
-    date: "2 hours ago",
-    department: "Tech Meetup",
-    content: "Great tech meetup happening right now. Lots of interesting discussions on AI and web development!",
-    mediaType: "video",
-    mediaUrl: "/tech-meetup-discussion.jpg",
-    likes: 156,
-    comments: 42,
-    shares: 8,
-  },
-]
+interface PostFeedProps {
+  departmentId?: string
+}
 
-export function PostFeed() {
-  const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
-  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set())
-  const [sharedPosts, setSharedPosts] = useState<Set<string>>(new Set())
+export function PostFeed({ departmentId }: PostFeedProps = {}) {
+  const { user } = useAuth()
+  const router = useRouter()
+  const [posts, setPosts] = useState<Post[]>([])
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [page, setPage] = useState(1)
 
-  const handleLike = (postId: string) => {
-    const newLiked = new Set(likedPosts)
-    if (newLiked.has(postId)) {
-      newLiked.delete(postId)
-    } else {
-      newLiked.add(postId)
+  // Load posts
+  useEffect(() => {
+    loadPosts()
+  }, [page, departmentId])
+
+  const loadPosts = async () => {
+    setIsLoading(true)
+    try {
+      const params: any = { page, limit: 10 }
+      if (departmentId) {
+        params.departmentId = departmentId
+      }
+      const response = await postsApi.getAll(params)
+      if (response.success && response.data) {
+        setPosts(response.data.posts || [])
+      }
+    } catch (error) {
+      console.error("Failed to load posts:", error)
+      toast.error("Failed to load posts")
+    } finally {
+      setIsLoading(false)
     }
-    setLikedPosts(newLiked)
   }
 
-  const handleShare = (postId: string) => {
-    const newShared = new Set(sharedPosts)
-    if (newShared.has(postId)) {
-      newShared.delete(postId)
-    } else {
-      newShared.add(postId)
+  const handleLike = async (postId: string | number) => {
+    try {
+      const response = await postsApi.toggleLike(postId)
+      if (response.success) {
+        // Update local state
+        setPosts(posts.map(post => 
+          post.id === postId 
+            ? { 
+                ...post, 
+                isLikedByUser: response.data?.liked,
+                likes_count: response.data?.liked 
+                  ? post.likes_count + 1 
+                  : Math.max(0, post.likes_count - 1)
+              }
+            : post
+        ))
+      } else {
+        toast.error(response.message || "Failed to update like")
+      }
+    } catch (error) {
+      console.error("Like error:", error)
+      toast.error("Failed to update like")
     }
-    setSharedPosts(newShared)
   }
 
-  return (
-    <>
+  const handleShare = async (postId: string | number) => {
+    try {
+      const response = await postsApi.toggleShare(postId)
+      if (response.success) {
+        // Update local state
+        setPosts(posts.map(post => 
+          post.id === postId 
+            ? { 
+                ...post, 
+                isSharedByUser: response.data?.shared,
+                shares_count: response.data?.shared 
+                  ? post.shares_count + 1 
+                  : Math.max(0, post.shares_count - 1)
+              }
+            : post
+        ))
+        toast.success(response.data?.shared ? "Post shared!" : "Share removed")
+      }
+    } catch (error) {
+      toast.error("Failed to share post")
+    }
+  }
+
+  const getRelativeDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffHours / 24)
+
+    if (diffHours < 1) return "Just now"
+    if (diffHours < 24) return `${diffHours} hours ago`
+    if (diffDays === 1) return "Yesterday"
+    if (diffDays < 7) return `${diffDays} days ago`
+    return date.toLocaleDateString()
+  }
+
+  if (isLoading && posts.length === 0) {
+    return (
       <div className="space-y-4">
-        {mockPosts.map((post) => (
-          <Card key={post.id} className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer">
+        {[1, 2, 3].map(i => (
+          <Card key={i} className="overflow-hidden">
             <CardContent className="p-4">
-              {/* Post Header */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <Avatar>
-                    <AvatarFallback className="bg-primary text-primary-foreground">{post.avatar}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <p className="font-semibold text-sm">{post.author}</p>
-                    <p className="text-xs text-muted-foreground">{post.username}</p>
-                  </div>
-                </div>
-                <span className="text-xs text-muted-foreground">{post.date}</span>
-              </div>
-
-              {/* Location & Department */}
-              <div className="flex gap-4 text-xs text-muted-foreground mb-3">
-                <span>📍 {post.location}</span>
-                <span>🏢 {post.department}</span>
-              </div>
-
-              {/* Content */}
-              <p className="text-sm mb-3">{post.content}</p>
-
-              {/* Media */}
-              <div
-                className="relative bg-muted rounded-lg overflow-hidden mb-4 aspect-video flex items-center justify-center group cursor-pointer"
-                onClick={() => setSelectedPostId(post.id)}
-              >
-                <img
-                  src={post.mediaUrl || "/placeholder.svg"}
-                  alt="Post media"
-                  className="w-full h-full object-cover"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 text-white hover:bg-black/70"
-                  title="Zoom image"
-                >
-                  <ZoomIn className="w-5 h-5" />
-                </Button>
-              </div>
-
-              {/* Interactions */}
-              <div className="flex items-center justify-between text-xs text-muted-foreground mb-3 border-b border-border pb-3">
-                <span>{post.likes} thanks</span>
-                <span>{post.comments} comments</span>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="grid grid-cols-4 gap-2">
-                <Button
-                  variant="ghost"
-                  className={`gap-2 bg-transparent ${likedPosts.has(post.id) ? "text-destructive" : "text-muted-foreground hover:text-primary"}`}
-                  size="sm"
-                  onClick={() => handleLike(post.id)}
-                >
-                  <Zap className={`w-4 h-4 ${likedPosts.has(post.id) ? "fill-current" : ""}`} />
-                  <span className="hidden sm:inline text-xs">Thanks</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="gap-2 bg-transparent text-muted-foreground hover:text-primary"
-                  size="sm"
-                  onClick={() => setSelectedPostId(post.id)}
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span className="hidden sm:inline text-xs">Comment</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  className={`gap-2 bg-transparent ${sharedPosts.has(post.id) ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
-                  size="sm"
-                  onClick={() => handleShare(post.id)}
-                >
-                  <Share2 className={`w-4 h-4 ${sharedPosts.has(post.id) ? "fill-current" : ""}`} />
-                  <span className="hidden sm:inline text-xs">Share</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="gap-2 bg-transparent text-muted-foreground hover:text-primary"
-                  size="sm"
-                >
-                  <Download className="w-4 h-4" />
-                  <span className="hidden sm:inline text-xs">Download</span>
-                </Button>
+              <div className="animate-pulse space-y-3">
+                <div className="h-4 bg-muted rounded w-3/4"></div>
+                <div className="h-4 bg-muted rounded w-1/2"></div>
+                <div className="h-48 bg-muted rounded"></div>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
+    )
+  }
 
-      {/* Post Details Modal */}
-      {selectedPostId && (
-        <PostDetailsModal isOpen={!!selectedPostId} onClose={() => setSelectedPostId(null)} postId={selectedPostId} />
-      )}
+  return (
+    <>
+      <div className="space-y-4">
+        {posts.length === 0 && !isLoading ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-muted-foreground">No posts found. Be the first to post!</p>
+            </CardContent>
+          </Card>
+        ) : (
+          posts.map((post) => (
+            <Card key={post.id} className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer">
+              <CardContent className="p-4">
+                {/* Post Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <div 
+                    className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => router.push(`/profile/${post.author_username}`)}
+                  >
+                    <Avatar>
+                      <AvatarFallback className="bg-primary text-primary-foreground">{post.author_avatar}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <p className="font-semibold text-sm hover:underline">{post.author_name}</p>
+                      <p className="text-xs text-muted-foreground">@{post.author_username}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{getRelativeDate(post.post_date)}</span>
+                </div>
+
+                {/* Location & Department */}
+                <div className="flex gap-4 text-xs text-muted-foreground mb-3">
+                  <span>📍 {post.area ? `${post.area}, ` : ''}{post.city}, {post.state}</span>
+                  {post.department_name && <span>🏢 {post.department_name}</span>}
+                </div>
+
+                {/* Content */}
+                {post.content && <p className="text-sm mb-3">{post.content}</p>}
+
+                {/* Media */}
+                {post.media_url && post.media_type !== "none" && (
+                  <div className="relative bg-muted rounded-lg overflow-hidden mb-4 aspect-video flex items-center justify-center">
+                    {post.media_type === "photo" && (
+                      <img
+                        src={`http://localhost:5000${post.media_url}`}
+                        alt="Post media"
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                    {post.media_type === "video" && (
+                      <video
+                        src={`http://localhost:5000${post.media_url}`}
+                        className="w-full h-full object-cover"
+                        controls
+                      />
+                    )}
+                    {post.media_type === "audio" && (
+                      <audio
+                        src={`http://localhost:5000${post.media_url}`}
+                        className="w-full"
+                        controls
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Interactions */}
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-3 border-b border-border pb-3">
+                  <span>{post.likes_count} thanks</span>
+                  <span>{post.comments_count} comments</span>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="grid grid-cols-4 gap-2">
+                  {/* Only show like/share buttons if not own post */}
+                  {user?.id !== post.user_id && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        className={`gap-2 bg-transparent ${post.isLikedByUser ? "text-destructive" : "text-muted-foreground hover:text-primary"}`}
+                        size="sm"
+                        onClick={() => handleLike(post.id)}
+                      >
+                        <Zap className={`w-4 h-4 ${post.isLikedByUser ? "fill-current" : ""}`} />
+                        <span className="hidden sm:inline text-xs">Thanks</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className={`gap-2 bg-transparent ${post.isSharedByUser ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+                        size="sm"
+                        onClick={() => handleShare(post.id)}
+                      >
+                        <Share2 className={`w-4 h-4 ${post.isSharedByUser ? "fill-current" : ""}`} />
+                        <span className="hidden sm:inline text-xs">Share</span>
+                      </Button>
+                    </>
+                  )}
+                  {user?.id === post.user_id && (
+                    <>
+                      {/* Show disabled like/share for own posts */}
+                      <Button
+                        variant="ghost"
+                        className="gap-2 bg-transparent text-muted-foreground opacity-50"
+                        size="sm"
+                        disabled
+                        title="Cannot like your own post"
+                      >
+                        <Zap className="w-4 h-4" />
+                        <span className="hidden sm:inline text-xs">Thanks</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="gap-2 bg-transparent text-muted-foreground opacity-50"
+                        size="sm"
+                        disabled
+                        title="Cannot share your own post"
+                      >
+                        <Share2 className="w-4 h-4" />
+                        <span className="hidden sm:inline text-xs">Share</span>
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    variant="ghost"
+                    className="gap-2 bg-transparent text-muted-foreground hover:text-primary"
+                    size="sm"
+                    onClick={() => setExpandedPostId(expandedPostId === String(post.id) ? null : String(post.id))}
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span className="hidden sm:inline text-xs">Comment</span>
+                    {expandedPostId === String(post.id) ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="gap-2 bg-transparent text-muted-foreground hover:text-primary"
+                    size="sm"
+                    onClick={() => {
+                      if (post.media_url) {
+                        window.open(`http://localhost:5000${post.media_url}`, '_blank')
+                      }
+                    }}
+                  >
+                    <Download className="w-4 h-4" />
+                    <span className="hidden sm:inline text-xs">Download</span>
+                  </Button>
+                </div>
+
+                {/* Inline Comment Section */}
+                {expandedPostId === String(post.id) && (
+                  <div className="mt-4 pt-4 border-t border-border">
+                    <CommentSection postId={String(post.id)} />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
     </>
   )
 }

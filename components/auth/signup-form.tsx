@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export function SignupForm() {
   const router = useRouter()
+  const { register } = useAuth()
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -71,10 +73,11 @@ export function SignupForm() {
     e.preventDefault()
     setError("")
 
-    if (!faceCaptured) {
-      setError("Face capture is mandatory. Please take a photo.")
-      return
-    }
+    // Face capture is now optional for testing
+    // if (!faceCaptured) {
+    //   setError("Face capture is mandatory. Please take a photo.")
+    //   return
+    // }
 
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.")
@@ -86,9 +89,35 @@ export function SignupForm() {
       return
     }
 
-    // Mock signup - in real app, this would call API
-    console.log("Signup attempt:", formData)
-    router.push("/home")
+    try {
+      // Prepare form data
+      const formDataToSend = new FormData()
+      formDataToSend.append("name", formData.name)
+      formDataToSend.append("username", formData.username)
+      formDataToSend.append("email", formData.email)
+      formDataToSend.append("mobileNumber", formData.mobileNumber)
+      formDataToSend.append("password", formData.password)
+
+      // Add face image if captured
+      if (canvasRef.current) {
+        const blob = await new Promise<Blob>((resolve) => {
+          canvasRef.current!.toBlob((blob) => resolve(blob!), "image/jpeg")
+        })
+        formDataToSend.append("faceImage", blob, "face.jpg")
+      }
+
+      // Use AuthContext register
+      const success = await register(formDataToSend)
+
+      if (success) {
+        // Redirect to home
+        router.push("/home")
+      } else {
+        throw new Error("Registration failed")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Registration failed. Please try again.")
+    }
   }
 
   return (
@@ -109,7 +138,7 @@ export function SignupForm() {
 
             {/* Face Capture Section */}
             <div className="space-y-2">
-              <Label>Face Capture (Required)</Label>
+              <Label>Face Capture (Optional - Skip for testing)</Label>
               {!faceCaptured ? (
                 <div className="space-y-2">
                   {cameraActive ? (

@@ -1,13 +1,34 @@
 "use client"
 
 import type React from "react"
-
+import { useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, MapPin, Share2, MessageSquare } from "lucide-react"
 
 export default function Home() {
   const router = useRouter()
+  const { isAuthenticated, isLoading } = useAuth()
+
+  // Redirect to home if already logged in
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.push("/home")
+    }
+  }, [isAuthenticated, isLoading, router])
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
+
+  if (isAuthenticated) {
+    return null // Will redirect
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/10">

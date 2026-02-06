@@ -1,11 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Heart, MessageCircle, Share2, Download, ImageIcon, Video, Volume2 } from "lucide-react"
+import { postsApi } from "@/lib/api"
+import { toast } from "sonner"
 
 interface SearchResult {
   id: string
@@ -23,54 +25,6 @@ interface SearchResult {
   comments: number
 }
 
-const mockResults: SearchResult[] = [
-  {
-    id: "1",
-    title: "Marina Beach Evening Event",
-    author: "Sarah Johnson",
-    username: "@sarahjohn",
-    avatar: "SJ",
-    location: "Marina Beach, Chennai",
-    date: "2024-12-15",
-    department: "City Events",
-    description: "Beautiful evening at Marina Beach with sunset views and community gathering.",
-    mediaType: "photo",
-    thumbnail: "/placeholder.svg",
-    likes: 234,
-    comments: 18,
-  },
-  {
-    id: "2",
-    title: "Tech Conference 2024",
-    author: "Raj Tech",
-    username: "@rajtech",
-    avatar: "RT",
-    location: "Bangalore IT Park, Bangalore",
-    date: "2024-12-14",
-    department: "Tech Meetup",
-    description: "Latest developments in AI and Machine Learning discussed by industry experts.",
-    mediaType: "video",
-    thumbnail: "/placeholder.svg",
-    likes: 456,
-    comments: 52,
-  },
-  {
-    id: "3",
-    title: "Local Podcast Recording",
-    author: "Mike Pod",
-    username: "@mikepod",
-    avatar: "MP",
-    location: "Indiranagar, Bangalore",
-    date: "2024-12-13",
-    department: "Community",
-    description: "Weekly podcast discussing local stories and community updates.",
-    mediaType: "audio",
-    thumbnail: "/placeholder.svg",
-    likes: 123,
-    comments: 28,
-  },
-]
-
 interface SearchResultsProps {
   filters: Record<string, string>
   hasSearched: boolean
@@ -78,11 +32,94 @@ interface SearchResultsProps {
 
 export function SearchResults({ filters, hasSearched }: SearchResultsProps) {
   const [viewType, setViewType] = useState<"grid" | "timeline">("grid")
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+
+  // Load search results when filters change
+  useEffect(() => {
+    if (hasSearched) {
+      loadSearchResults()
+    }
+  }, [filters, hasSearched])
+
+  const loadSearchResults = async () => {
+    setIsLoading(true)
+    try {
+      // Build search parameters from filters
+      const searchParams: any = {
+        type: 'posts', // Only search for posts
+        sortBy: filters.sortBy || 'recent',
+        page: 1,
+        limit: 50,
+      }
+
+      // Add location filters
+      if (filters.country) searchParams.country = filters.country
+      if (filters.state) searchParams.state = filters.state
+      if (filters.city) searchParams.city = filters.city
+      if (filters.area) searchParams.area = filters.area
+      
+      // Add department filter
+      if (filters.department) searchParams.department = filters.department
+      
+      // Add date filters
+      if (filters.dateFrom) searchParams.dateFrom = filters.dateFrom
+      if (filters.dateTo) searchParams.dateTo = filters.dateTo
+      
+      // Add media type filter
+      if (filters.mediaType && filters.mediaType !== 'all') {
+        searchParams.mediaType = filters.mediaType
+        searchParams.hasMedia = true
+      }
+      
+      // Add search query if present
+      if (filters.query) searchParams.query = filters.query
+
+      const response = await postsApi.search(searchParams)
+      if (response.success && response.data) {
+        const posts = response.data.posts || []
+        setResults(posts.map((post: any) => ({
+          id: post.id.toString(),
+          title: post.content?.substring(0, 100) || "Untitled Post",
+          author: post.name || "Unknown",
+          username: post.username || "",
+          avatar: post.avatar || post.name?.substring(0, 2).toUpperCase() || "U",
+          location: `${post.city || ''}, ${post.state || ''}`.trim().replace(/^,\s*|,\s*$/g, '') || 'Unknown',
+          date: post.post_date || post.created_at,
+          department: post.department_name || "General",
+          description: post.content || "",
+          mediaType: post.media_type === "video" ? "video" : post.media_type === "audio" ? "audio" : "photo",
+          thumbnail: post.media_url ? `http://localhost:5000${post.media_url}` : "/placeholder.svg",
+          likes: post.reaction_count || 0,
+          comments: post.comment_count || 0,
+        })))
+      } else {
+        setResults([])
+        if (response.message) {
+          toast.error(response.message)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load search results:", error)
+      toast.error("Failed to load search results")
+      setResults([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   if (!hasSearched) {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground mb-2">Use the filters above to search for events and content</p>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">Loading results...</p>
       </div>
     )
   }
@@ -94,7 +131,7 @@ export function SearchResults({ filters, hasSearched }: SearchResultsProps) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground">
-            {mockResults.length} results found
+            {results.length} results found
             {activeFilters > 0 && ` with ${activeFilters} active filter(s)`}
           </p>
         </div>
@@ -108,7 +145,7 @@ export function SearchResults({ filters, hasSearched }: SearchResultsProps) {
 
       {viewType === "grid" ? (
         <div className="grid md:grid-cols-2 gap-4">
-          {mockResults.map((result) => (
+          {results.map((result) => (
             <Card key={result.id} className="overflow-hidden hover:shadow-md transition-shadow">
               <div className="relative aspect-video bg-muted flex items-center justify-center overflow-hidden group">
                 <img
@@ -187,7 +224,7 @@ export function SearchResults({ filters, hasSearched }: SearchResultsProps) {
         </div>
       ) : (
         <div className="space-y-3">
-          {mockResults.map((result) => (
+          {results.map((result) => (
             <Card key={result.id} className="overflow-hidden hover:shadow-md transition-shadow">
               <CardContent className="p-4">
                 <div className="flex gap-4">

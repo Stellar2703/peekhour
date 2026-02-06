@@ -1,0 +1,39 @@
+import express from 'express';
+import { body } from 'express-validator';
+import {
+  createDepartment,
+  getDepartments,
+  getDepartmentById,
+  joinDepartment,
+  leaveDepartment,
+  getDepartmentMembers,
+  getDepartmentPosts,
+  updateDepartment,
+  deleteDepartment
+} from '../controllers/departmentController.js';
+import { authenticate, optionalAuth } from '../middleware/auth.js';
+import { validate } from '../middleware/validator.js';
+
+const router = express.Router();
+
+// Validation rules
+const createDepartmentValidation = [
+  body('name').trim().notEmpty().withMessage('Department name is required'),
+  body('type')
+    .isIn(['college', 'government', 'corporate', 'community'])
+    .withMessage('Invalid department type'),
+  body('description').optional().trim()
+];
+
+// Routes
+router.post('/', authenticate, createDepartmentValidation, validate, createDepartment);
+router.get('/', optionalAuth, getDepartments);
+router.get('/:id', optionalAuth, getDepartmentById);
+router.get('/:id/posts', authenticate, getDepartmentPosts);
+router.post('/:id/join', authenticate, joinDepartment);
+router.post('/:id/leave', authenticate, leaveDepartment);
+router.get('/:id/members', getDepartmentMembers);
+router.put('/:id', authenticate, updateDepartment);
+router.delete('/:id', authenticate, deleteDepartment);
+
+export default router;

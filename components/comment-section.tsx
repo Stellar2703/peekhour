@@ -1,21 +1,24 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { formatDistanceToNow } from "date-fns"
 import { Bold, Italic, Type } from "lucide-react"
+import { commentsApi } from "@/lib/api"
+import { toast } from "sonner"
 
 interface Comment {
-  id: string
-  author: string
-  username: string
-  avatar: string
+  id: string | number
+  author_name: string
+  author_username: string
+  author_avatar: string
   content: string
-  timestamp: Date
-  isBold?: boolean
-  isItalic?: boolean
+  created_at: string
+  is_bold?: boolean
+  is_italic?: boolean
+  replies_count?: number
 }
 
 interface CommentSectionProps {
@@ -23,47 +26,104 @@ interface CommentSectionProps {
 }
 
 export function CommentSection({ postId }: CommentSectionProps) {
-  const [comments, setComments] = useState<Comment[]>([
-    {
-      id: "1",
-      author: "Mike Park",
-      username: "@mikepark",
-      avatar: "MP",
-      content: "Amazing shot! Love the composition.",
-      timestamp: new Date(Date.now() - 3600000),
-    },
-    {
-      id: "2",
-      author: "Emma Chen",
-      username: "@emmachen",
-      avatar: "EC",
-      content: "When was this taken? Looks like the perfect time of day.",
-      timestamp: new Date(Date.now() - 1800000),
-    },
-  ])
-
+  const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState("")
   const [isBold, setIsBold] = useState(false)
   const [isItalic, setIsItalic] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [replyingTo, setReplyingTo] = useState<number | null>(null)
+  const [replyContent, setReplyContent] = useState("")
+  const [repliesMap, setRepliesMap] = useState<Record<number, Comment[]>>({})
+  const [expandedComments, setExpandedComments] = useState<Set<number>>(new Set())
 
-  const handleAddComment = () => {
+  // Load comments
+  useEffect(() => {
+    loadComments()
+  }, [postId])
+
+  const loadComments = async () => {
+    try {
+      const response = await commentsApi.getAll(postId)
+      if (response.success && response.data) {
+        setComments(response.data.comments || [])
+      }
+    } catch (error) {
+      console.error("Failed to load comments:", error)
+    }
+  }
+
+  const handleAddComment = async () => {
     if (!newComment.trim()) return
 
-    const comment: Comment = {
-      id: Date.now().toString(),
-      author: "You",
-      username: "@yourname",
-      avatar: "YN",
-      content: newComment,
-      timestamp: new Date(),
-      isBold,
-      isItalic,
+    setIsLoading(true)
+    try {
+      const response = await commentsApi.add(postId, newComment, isBold, isItalic)
+      
+      if (response.success) {
+        // Reload comments
+        await loadComments()
+        
+        // Reset form
+        setNewComment("")
+        setIsBold(false)
+        setIsItalic(false)
+        
+        toast.success("Comment added successfully")
+      } else {
+        toast.error(response.message || "Failed to add comment")
+      }
+    } catch (error) {
+      toast.error("Failed to add comment")
+    } finally {
+      setIsLoading(false)
     }
+  }
 
-    setComments([...comments, comment])
-    setNewComment("")
-    setIsBold(false)
-    setIsItalic(false)
+  const handleReply = async (commentId: number) => {
+    if (!replyContent.trim()) return
+
+    try {
+      const response = await commentsApi.createReply(postId, commentId, replyContent)
+      if (response.success) {
+        toast.success("Reply added successfully")
+        setReplyContent("")
+        setReplyingTo(null)
+        // Reload replies for this comment
+        loadReplies(commentId)
+      } else {
+        toast.error(response.message || "Failed to add reply")
+      }
+    } catch (error) {
+      toast.error("Failed to add reply")
+    }
+  }
+
+  const loadReplies = async (commentId: number) => {
+    try {
+      const response = await commentsApi.getReplies(commentId)
+      if (response.success && response.data) {
+        setRepliesMap(prev => ({
+          ...prev,
+          [commentId]: response.data || []
+        }))
+      }
+    } catch (error) {
+      console.error("Failed to load replies:", error)
+    }
+  }
+
+  const toggleReplies = (commentId: number) => {
+    const newExpanded = new Set(expandedComments)
+    if (newExpanded.has(commentId)) {
+      newExpanded.delete(commentId)
+    } else {
+      newExpanded.add(commentId)
+      // Load replies if not already loaded
+      if (!repliesMap[commentId]) {
+        loadReplies(commentId)
+      }
+    }
+    setExpandedComments(newExpanded)
   }
 
   return (
@@ -114,10 +174,10 @@ export function CommentSection({ postId }: CommentSectionProps) {
             <Button
               size="sm"
               onClick={handleAddComment}
-              disabled={!newComment.trim()}
+              disabled={!newComment.trim() || isLoading}
               className="absolute right-1 top-1/2 -translate-y-1/2"
             >
-              Post
+              {isLoading ? "Posting..." : "Post"}
             </Button>
           </div>
         </div>
@@ -133,21 +193,21 @@ export function CommentSection({ postId }: CommentSectionProps) {
               <div className="flex gap-3">
                 <Avatar className="w-8 h-8 flex-shrink-0">
                   <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                    {comment.avatar}
+                    {comment.author_avatar}
                   </AvatarFallback>
                 </Avatar>
 
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">{comment.author}</span>
-                    <span className="text-xs text-muted-foreground">{comment.username}</span>
+                    <span className="font-medium text-sm">{comment.author_name}</span>
+                    <span className="text-xs text-muted-foreground">{comment.author_username}</span>
                     <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(comment.timestamp, { addSuffix: true })}
+                      {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
                     </span>
                   </div>
 
                   <p
-                    className={`text-sm mt-1 text-foreground ${comment.isBold ? "font-semibold" : ""} ${comment.isItalic ? "italic" : ""}`}
+                    className={`text-sm mt-1 text-foreground ${comment.is_bold ? "font-semibold" : ""} ${comment.is_italic ? "italic" : ""}`}
                   >
                     {comment.content}
                   </p>
@@ -157,17 +217,74 @@ export function CommentSection({ postId }: CommentSectionProps) {
                       variant="ghost"
                       size="sm"
                       className="h-auto p-0 text-xs text-muted-foreground bg-transparent"
+                      onClick={() => setReplyingTo(replyingTo === Number(comment.id) ? null : Number(comment.id))}
                     >
                       Reply
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto p-0 text-xs text-muted-foreground bg-transparent"
-                    >
-                      Report
-                    </Button>
+                    {comment.replies_count && comment.replies_count > 0 ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto p-0 text-xs text-muted-foreground bg-transparent"
+                        onClick={() => toggleReplies(Number(comment.id))}
+                      >
+                        {expandedComments.has(Number(comment.id)) ? "Hide" : "View"} {comment.replies_count} {comment.replies_count === 1 ? "reply" : "replies"}
+                      </Button>
+                    ) : null}
                   </div>
+
+                  {/* Reply Input */}
+                  {replyingTo === Number(comment.id) && (
+                    <div className="mt-3 flex gap-2">
+                      <Input
+                        placeholder="Write a reply..."
+                        value={replyContent}
+                        onChange={(e) => setReplyContent(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault()
+                            handleReply(Number(comment.id))
+                          }
+                        }}
+                        className="text-sm"
+                      />
+                      <Button size="sm" onClick={() => handleReply(Number(comment.id))} disabled={!replyContent.trim()}>
+                        Send
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => {
+                        setReplyingTo(null)
+                        setReplyContent("")
+                      }}>
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Nested Replies */}
+                  {expandedComments.has(Number(comment.id)) && repliesMap[Number(comment.id)] && (
+                    <div className="mt-3 ml-4 space-y-2 border-l-2 border-border pl-3">
+                      {repliesMap[Number(comment.id)].map((reply) => (
+                        <div key={reply.id} className="flex gap-2">
+                          <Avatar className="w-6 h-6 flex-shrink-0">
+                            <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                              {reply.author_avatar}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-xs">{reply.author_name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDistanceToNow(new Date(reply.created_at), { addSuffix: true })}
+                              </span>
+                            </div>
+                            <p className={`text-xs mt-1 ${reply.is_bold ? "font-semibold" : ""} ${reply.is_italic ? "italic" : ""}`}>
+                              {reply.content}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>

@@ -1,11 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DepartmentCard } from "@/components/department-card"
 import { CreateDepartmentDialog, type CreateDepartmentData } from "@/components/create-department-dialog"
 import { Search, Plus } from "lucide-react"
+import { departmentsApi } from "@/lib/api"
+import { toast } from "sonner"
 
 interface Department {
   id: string
@@ -19,71 +22,44 @@ interface Department {
   isJoined: boolean
 }
 
-const mockDepartments: Department[] = [
-  {
-    id: "1",
-    name: "CSE Department",
-    type: "college",
-    description:
-      "Computer Science and Engineering Department for sharing academic updates, project discussions, and college events.",
-    members: 284,
-    posts: 156,
-    avatar: "🎓",
-    location: "Anna University, Chennai",
-    isJoined: true,
-  },
-  {
-    id: "2",
-    name: "Chennai Police Department",
-    type: "government",
-    description: "Official channel for police department announcements, public safety alerts, and community programs.",
-    members: 1200,
-    posts: 89,
-    avatar: "🚔",
-    location: "Chennai, Tamil Nadu",
-    isJoined: false,
-  },
-  {
-    id: "3",
-    name: "TCS Technology Hub",
-    type: "corporate",
-    description:
-      "Tata Consultancy Services innovation center for tech discussions, webinars, and career opportunities.",
-    members: 2500,
-    posts: 234,
-    avatar: "💻",
-    location: "Bangalore, Karnataka",
-    isJoined: false,
-  },
-  {
-    id: "4",
-    name: "Mylapore Community",
-    type: "community",
-    description: "Local community page for neighborhood events, announcements, and community collaboration.",
-    members: 456,
-    posts: 123,
-    avatar: "👥",
-    location: "Mylapore, Chennai",
-    isJoined: true,
-  },
-  {
-    id: "5",
-    name: "Inter-College Events",
-    type: "college",
-    description: "Platform for organizing and promoting inter-college competitions, cultural events, and festivals.",
-    members: 892,
-    posts: 234,
-    avatar: "🎉",
-    location: "Tamil Nadu",
-    isJoined: false,
-  },
-]
-
 export function DepartmentsList() {
+  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState<string | null>(null)
-  const [departments, setDepartments] = useState(mockDepartments)
+  const [departments, setDepartments] = useState<Department[]>([])
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Load departments from API
+  useEffect(() => {
+    loadDepartments()
+  }, [])
+
+  const loadDepartments = async () => {
+    setIsLoading(true)
+    try {
+      const response = await departmentsApi.getAll()
+      if (response.success && response.data) {
+        const depts = response.data.departments || []
+        setDepartments(depts.map((d: any) => ({
+          id: d.id.toString(),
+          name: d.name,
+          type: d.type || "community",
+          description: d.description || "",
+          members: d.member_count || 0,
+          posts: d.post_count || 0,
+          avatar: d.avatar || "🏢",
+          location: d.location || "",
+          isJoined: d.is_member || false,
+        })))
+      }
+    } catch (error) {
+      console.error("Failed to load departments:", error)
+      toast.error("Failed to load departments")
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleCreateDepartment = (data: CreateDepartmentData) => {
     const newDept: Department = {
@@ -97,8 +73,17 @@ export function DepartmentsList() {
     setDepartments([newDept, ...departments])
   }
 
-  const handleJoinDepartment = (id: string) => {
-    setDepartments(departments.map((dept) => (dept.id === id ? { ...dept, isJoined: true } : dept)))
+  const handleJoinDepartment = async (id: string) => {
+    try {
+      const response = await departmentsApi.join(id)
+      if (response.success) {
+        setDepartments(departments.map((dept) => (dept.id === id ? { ...dept, isJoined: true } : dept)))
+        toast.success("Joined department successfully")
+      }
+    } catch (error) {
+      console.error("Failed to join department:", error)
+      toast.error("Failed to join department")
+    }
   }
 
   const filteredDepartments = departments.filter((dept) => {
@@ -182,7 +167,9 @@ export function DepartmentsList() {
       {filteredDepartments.length > 0 ? (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredDepartments.map((dept) => (
-            <DepartmentCard key={dept.id} department={dept} onJoin={handleJoinDepartment} />
+            <div key={dept.id} onClick={() => router.push(`/departments/${dept.id}`)} className="cursor-pointer">
+              <DepartmentCard department={dept} onJoin={handleJoinDepartment} />
+            </div>
           ))}
         </div>
       ) : (

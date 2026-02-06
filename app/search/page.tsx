@@ -3,38 +3,37 @@
 import { useState } from "react"
 import { SearchFiltersComponent } from "@/components/search-filters"
 import { SearchResults } from "@/components/search-results"
+import { ProtectedRoute } from "@/components/ProtectedRoute"
 
 interface SearchFilters {
+  query: string
   department: string
-  ministry: string
   username: string
   streetName: string
-  areaName: string
-  locationName: string
+  area: string
   city: string
   state: string
   country: string
-  corporateName: string
-  pinCode: string
-  dateRangeStart: string
-  dateRangeEnd: string
+  dateFrom: string
+  dateTo: string
+  mediaType: string
+  sortBy: string
 }
 
 export default function SearchPage() {
   const [filters, setFilters] = useState<SearchFilters>({
+    query: "",
     department: "",
-    ministry: "",
     username: "",
     streetName: "",
-    areaName: "",
-    locationName: "",
+    area: "",
     city: "",
     state: "",
     country: "",
-    corporateName: "",
-    pinCode: "",
-    dateRangeStart: "",
-    dateRangeEnd: "",
+    dateFrom: "",
+    dateTo: "",
+    mediaType: "",
+    sortBy: "recent",
   })
 
   const [hasSearched, setHasSearched] = useState(false)
@@ -45,21 +44,23 @@ export default function SearchPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Search Events & Content</h1>
-            <p className="text-muted-foreground">
-              Find posts, photos, videos, and audio by location, department, date, and more
-            </p>
+    <ProtectedRoute>
+      <main className="min-h-screen bg-background">
+        <div className="max-w-5xl mx-auto px-4 py-8">
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">Search Events & Content</h1>
+              <p className="text-muted-foreground">
+                Find posts, photos, videos, and audio by location, department, date, and more
+              </p>
+            </div>
+
+            <SearchFiltersComponent filters={filters} onFilterChange={setFilters} onSearch={handleSearch} />
+
+            <SearchResults filters={filters} hasSearched={hasSearched} />
           </div>
-
-          <SearchFiltersComponent filters={filters} onFilterChange={setFilters} onSearch={handleSearch} />
-
-          <SearchResults filters={filters} hasSearched={hasSearched} />
         </div>
-      </div>
-    </main>
+      </main>
+    </ProtectedRoute>
   )
 }

@@ -1,276 +1,288 @@
 "use client"
-import { useState } from "react"
+
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ImageIcon, Video, Volume2, MapPin, Calendar, Users, X } from "lucide-react"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ImageIcon, Video, Volume2, MapPin, X } from "lucide-react"
+import { postsApi, userApi, departmentsApi } from "@/lib/api"
+import { toast } from "sonner"
 
-interface LocationData {
-  country: string
-  state: string
-  city: string
-  area: string
-  street: string
-  pinCode: string
+interface PostUploadCardProps {
+  defaultDepartmentId?: string
 }
 
-export function PostUploadCard() {
+export function PostUploadCard({ defaultDepartmentId }: PostUploadCardProps = {}) {
+  const [content, setContent] = useState("")
   const [mediaType, setMediaType] = useState<"photo" | "video" | "audio" | null>(null)
-  const [textContent, setTextContent] = useState("")
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0])
-  const [selectedDepartment, setSelectedDepartment] = useState("")
-  const [locationData, setLocationData] = useState<LocationData>({
-    country: "India",
-    state: "Tamil Nadu",
-    city: "Chennai",
-    area: "",
-    street: "",
-    pinCode: "",
-  })
-  const [autoDetectLocation, setAutoDetectLocation] = useState(false)
-  const [previousLocations] = useState<LocationData[]>([
-    { country: "India", state: "Tamil Nadu", city: "Chennai", area: "Mylapore", street: "Mylapore", pinCode: "600004" },
-    {
-      country: "India",
-      state: "Karnataka",
-      city: "Bangalore",
-      area: "Indiranagar",
-      street: "Indiranagar",
-      pinCode: "560038",
-    },
-  ])
+  const [mediaFile, setMediaFile] = useState<File | null>(null)
+  const [location, setLocation] = useState("")
+  const [city, setCity] = useState("")
+  const [state, setState] = useState("")
+  const [country, setCountry] = useState("India")
+  const [selectedDepartment, setSelectedDepartment] = useState(defaultDepartmentId || "")
+  const [isPosting, setIsPosting] = useState(false)
+  const [previousLocations, setPreviousLocations] = useState<any[]>([])
+  const [departments, setDepartments] = useState<any[]>([])
+  
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleLocationChange = (field: keyof LocationData, value: string) => {
-    setLocationData((prev) => ({ ...prev, [field]: value }))
+  // Load previous locations and departments
+  useEffect(() => {
+    loadPreviousLocations()
+    loadDepartments()
+  }, [])
+
+  // Set default department when prop changes
+  useEffect(() => {
+    if (defaultDepartmentId) {
+      setSelectedDepartment(defaultDepartmentId)
+    }
+  }, [defaultDepartmentId])
+
+  const loadPreviousLocations = async () => {
+    try {
+      const response = await userApi.getLocations()
+      if (response.success && response.data) {
+        setPreviousLocations(Array.isArray(response.data) ? response.data : [])
+      }
+    } catch (error) {
+      console.error("Failed to load locations:", error)
+    }
   }
 
-  const applyPreviousLocation = (location: LocationData) => {
-    setLocationData(location)
+  const loadDepartments = async () => {
+    try {
+      const response = await departmentsApi.getAll()
+      if (response.success && response.data) {
+        setDepartments(Array.isArray(response.data) ? response.data : [])
+      }
+    } catch (error) {
+      console.error("Failed to load departments:", error)
+    }
   }
 
-  const handlePost = () => {
-    if (!mediaType && !textContent) {
-      alert("Please add content or select a media type")
+  const handleMediaSelect = (type: "photo" | "video" | "audio") => {
+    setMediaType(type)
+    setTimeout(() => {
+      fileInputRef.current?.click()
+    }, 100)
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setMediaFile(file)
+      toast.success(`${mediaType} selected: ${file.name}`)
+    }
+  }
+
+  const handlePost = async () => {
+    if (!content && !mediaFile) {
+      toast.error("Please add some content or media")
       return
     }
 
-    console.log({
-      mediaType,
-      textContent,
-      date: selectedDate,
-      department: selectedDepartment,
-      location: locationData,
-    })
+    if (!city || !state) {
+      toast.error("Please provide at least city and state")
+      return
+    }
 
-    // Reset form
-    setMediaType(null)
-    setTextContent("")
-    setSelectedDepartment("")
+    setIsPosting(true)
+
+    try {
+      const formData = new FormData()
+      
+      if (content) {
+        formData.append("content", content)
+      }
+      
+      if (mediaFile && mediaType) {
+        formData.append("media", mediaFile)
+        formData.append("mediaType", mediaType)
+      }
+      
+      formData.append("location", location)
+      formData.append("city", city)
+      formData.append("state", state)
+      formData.append("country", country)
+      
+      if (selectedDepartment) {
+        formData.append("departmentId", selectedDepartment)
+      }
+
+      const response = await postsApi.create(formData)
+
+      if (response.success) {
+        toast.success("Post created successfully!")
+        // Reset form
+        setContent("")
+        setMediaFile(null)
+        setMediaType(null)
+        setLocation("")
+        setCity("")
+        setState("")
+        setCountry("India")
+        setSelectedDepartment(defaultDepartmentId || "")
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ""
+        }
+        // Refresh page to show new post
+        window.location.reload()
+      } else {
+        toast.error(response.message || "Failed to create post")
+      }
+    } catch (error: any) {
+      toast.error(error.message || "An error occurred")
+    } finally {
+      setIsPosting(false)
+    }
   }
 
   return (
-    <Card className="mb-6">
-      <CardContent className="pt-6">
-        <div className="space-y-4">
-          {/* Text Content */}
-          <div>
-            <Label htmlFor="post-text" className="text-sm font-medium">
-              What&apos;s happening?
-            </Label>
-            <textarea
-              id="post-text"
-              className="w-full mt-2 p-3 border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary bg-input"
-              rows={3}
-              placeholder="Share what you're seeing or experiencing..."
-              value={textContent}
-              onChange={(e) => setTextContent(e.target.value)}
-            />
+    <Card>
+      <CardHeader>
+        <CardTitle>Create Post</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Text Content */}
+        <div>
+          <Textarea
+            placeholder="What's happening at your location?"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={3}
+            className="resize-none"
+          />
+        </div>
+
+        {/* Media Upload */}
+        <div className="space-y-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={
+              mediaType === "photo" ? "image/*" :
+              mediaType === "video" ? "video/*" :
+              mediaType === "audio" ? "audio/*" : ""
+            }
+            onChange={handleFileChange}
+            className="hidden"
+          />
+          
+          <div className="grid grid-cols-3 gap-2">
+            <Button
+              variant={mediaType === "photo" ? "default" : "outline"}
+              onClick={() => handleMediaSelect("photo")}
+              type="button"
+              className="gap-2"
+            >
+              <ImageIcon className="w-4 h-4" />
+              Photo
+            </Button>
+            <Button
+              variant={mediaType === "video" ? "default" : "outline"}
+              onClick={() => handleMediaSelect("video")}
+              type="button"
+              className="gap-2"
+            >
+              <Video className="w-4 h-4" />
+              Video
+            </Button>
+            <Button
+              variant={mediaType === "audio" ? "default" : "outline"}
+              onClick={() => handleMediaSelect("audio")}
+              type="button"
+              className="gap-2"
+            >
+              <Volume2 className="w-4 h-4" />
+              Audio
+            </Button>
           </div>
 
-          {/* Media Selection */}
-          <div>
-            <Label className="text-sm font-medium mb-2 block">Upload Media</Label>
-            <div className="grid grid-cols-3 gap-2">
+          {mediaFile && (
+            <div className="flex items-center justify-between p-2 bg-muted rounded">
+              <span className="text-sm truncate">{mediaFile.name}</span>
               <Button
-                variant={mediaType === "photo" ? "default" : "outline"}
-                className="gap-2 bg-transparent"
-                onClick={() => setMediaType("photo")}
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setMediaFile(null)
+                  setMediaType(null)
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = ""
+                  }
+                }}
               >
-                <ImageIcon className="w-4 h-4" />
-                Photo
-              </Button>
-              <Button
-                variant={mediaType === "video" ? "default" : "outline"}
-                className="gap-2 bg-transparent"
-                onClick={() => setMediaType("video")}
-              >
-                <Video className="w-4 h-4" />
-                Video
-              </Button>
-              <Button
-                variant={mediaType === "audio" ? "default" : "outline"}
-                className="gap-2 bg-transparent"
-                onClick={() => setMediaType("audio")}
-              >
-                <Volume2 className="w-4 h-4" />
-                Audio
+                <X className="w-4 h-4" />
               </Button>
             </div>
-            {mediaType && (
-              <div className="mt-3 p-3 bg-muted rounded-lg flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {mediaType === "photo" && "Select image file"}
-                  {mediaType === "video" && "Select video file"}
-                  {mediaType === "audio" && "Select audio file"}
-                </span>
-                <Button variant="ghost" size="sm" onClick={() => setMediaType(null)}>
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
-          </div>
+          )}
+        </div>
 
-          {/* Date Selection */}
-          <div>
-            <Label htmlFor="post-date" className="text-sm font-medium flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              Date
-            </Label>
+        {/* Location */}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            <MapPin className="w-4 h-4" />
+            Location
+          </Label>
+          
+          <div className="grid grid-cols-2 gap-2">
             <Input
-              id="post-date"
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="mt-2"
+              placeholder="City *"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+            />
+            <Input
+              placeholder="State *"
+              value={state}
+              onChange={(e) => setState(e.target.value)}
             />
           </div>
+          
+          <Input
+            placeholder="Specific location (optional)"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
 
-          {/* Location Selection */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium flex items-center gap-2">
-              <MapPin className="w-4 h-4" />
-              Location Details
-            </Label>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="auto-detect"
-                checked={autoDetectLocation}
-                onChange={(e) => setAutoDetectLocation(e.target.checked)}
-              />
-              <label htmlFor="auto-detect" className="text-sm cursor-pointer">
-                Auto-detect location
-              </label>
+          {previousLocations.length > 0 && (
+            <div className="text-xs text-muted-foreground">
+              Previous: {previousLocations.slice(0, 3).map(loc => `${loc.city}, ${loc.state}`).join(" • ")}
             </div>
+          )}
+        </div>
 
-            {autoDetectLocation && (
-              <Alert>
-                <AlertDescription>Location auto-detection enabled. Using device location.</AlertDescription>
-              </Alert>
-            )}
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-xs">Country</Label>
-                <Input
-                  value={locationData.country}
-                  onChange={(e) => handleLocationChange("country", e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">State</Label>
-                <Input
-                  value={locationData.state}
-                  onChange={(e) => handleLocationChange("state", e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">City</Label>
-                <Input
-                  value={locationData.city}
-                  onChange={(e) => handleLocationChange("city", e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Area</Label>
-                <Input
-                  value={locationData.area}
-                  onChange={(e) => handleLocationChange("area", e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Street</Label>
-                <Input
-                  value={locationData.street}
-                  onChange={(e) => handleLocationChange("street", e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Pin Code</Label>
-                <Input
-                  value={locationData.pinCode}
-                  onChange={(e) => handleLocationChange("pinCode", e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Previous Locations */}
-            {previousLocations.length > 0 && (
-              <div>
-                <Label className="text-xs text-muted-foreground mb-2 block">Recently Used Locations</Label>
-                <div className="space-y-2">
-                  {previousLocations.map((location, idx) => (
-                    <Button
-                      key={idx}
-                      variant="outline"
-                      className="w-full justify-start text-left bg-transparent h-auto py-2"
-                      onClick={() => applyPreviousLocation(location)}
-                    >
-                      <span className="text-sm">
-                        {location.area || location.city}, {location.state}
-                      </span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Department Selection */}
+        {/* Department Selection */}
+        {departments.length > 0 && (
           <div>
-            <Label htmlFor="department" className="text-sm font-medium flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Department / Page
-            </Label>
+            <Label>Department (Optional)</Label>
             <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-              <SelectTrigger id="department" className="mt-2">
-                <SelectValue placeholder="Select a department or create new" />
+              <SelectTrigger>
+                <SelectValue placeholder="Select department" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="cse-dept">CSE Department</SelectItem>
-                <SelectItem value="college-events">College Events</SelectItem>
-                <SelectItem value="police-dept">Police Department</SelectItem>
-                <SelectItem value="city-events">City Events</SelectItem>
-                <SelectItem value="create-new">+ Create New Department</SelectItem>
+                {departments.map((dept: any) => (
+                  <SelectItem key={dept.id} value={dept.id.toString()}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
+        )}
 
-          {/* Post Button */}
-          <Button className="w-full" onClick={handlePost} size="lg">
-            Post to Peekhour
-          </Button>
-        </div>
+        {/* Post Button */}
+        <Button
+          className="w-full"
+          onClick={handlePost}
+          disabled={isPosting}
+        >
+          {isPosting ? "Posting..." : "Post"}
+        </Button>
       </CardContent>
     </Card>
   )

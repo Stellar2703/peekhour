@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export function LoginForm() {
   const router = useRouter()
+  const { login } = useAuth()
   const [formData, setFormData] = useState({
     username: "",
     password: "",
@@ -32,17 +34,19 @@ export function LoginForm() {
     setIsLoading(true)
 
     try {
-      // Mock login - in real app, this would call API
       if (!formData.username || !formData.password) {
         throw new Error("Please fill in all fields")
       }
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // Use AuthContext login
+      const success = await login(formData.username, formData.password)
 
-      // Mock successful login
-      console.log("Login successful for:", formData.username)
-      router.push("/home")
+      if (success) {
+        // Redirect to home
+        router.push("/home")
+      } else {
+        throw new Error("Login failed")
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed. Please try again.")
     } finally {

@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -7,21 +7,22 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { ChevronDown, X } from "lucide-react"
+import { departmentsApi } from "@/lib/api"
+import { toast } from "sonner"
 
 interface SearchFilters {
+  query: string
   department: string
-  ministry: string
   username: string
   streetName: string
-  areaName: string
-  locationName: string
+  area: string
   city: string
   state: string
   country: string
-  corporateName: string
-  pinCode: string
-  dateRangeStart: string
-  dateRangeEnd: string
+  dateFrom: string
+  dateTo: string
+  mediaType: string
+  sortBy: string
 }
 
 interface SearchFiltersProps {
@@ -32,6 +33,25 @@ interface SearchFiltersProps {
 
 export function SearchFiltersComponent({ filters, onFilterChange, onSearch }: SearchFiltersProps) {
   const [expanded, setExpanded] = useState(true)
+  const [departments, setDepartments] = useState<Array<{ id: number; name: string }>>([])
+
+  // Load departments on component mount
+  useEffect(() => {
+    const loadDepartments = async () => {
+      try {
+        const response = await departmentsApi.getAll()
+        if (response.success && response.data) {
+          // Handle both array and object responses
+          const deptData = Array.isArray(response.data) ? response.data : response.data.departments || []
+          setDepartments(deptData)
+        }
+      } catch (error) {
+        console.error("Failed to load departments:", error)
+        setDepartments([]) // Ensure it's always an array
+      }
+    }
+    loadDepartments()
+  }, [])
 
   const handleInputChange = (field: keyof SearchFilters, value: string) => {
     onFilterChange({ ...filters, [field]: value })
@@ -39,19 +59,18 @@ export function SearchFiltersComponent({ filters, onFilterChange, onSearch }: Se
 
   const handleReset = () => {
     onFilterChange({
+      query: "",
       department: "",
-      ministry: "",
       username: "",
       streetName: "",
-      areaName: "",
-      locationName: "",
+      area: "",
       city: "",
       state: "",
       country: "",
-      corporateName: "",
-      pinCode: "",
-      dateRangeStart: "",
-      dateRangeEnd: "",
+      dateFrom: "",
+      dateTo: "",
+      mediaType: "",
+      sortBy: "",
     })
   }
 
@@ -75,51 +94,74 @@ export function SearchFiltersComponent({ filters, onFilterChange, onSearch }: Se
 
       {expanded && (
         <CardContent className="space-y-4">
+          {/* Search Query Field */}
+          <div>
+            <Label htmlFor="search-query" className="text-sm">
+              Search Query
+            </Label>
+            <Input
+              id="search-query"
+              placeholder="Search posts by content..."
+              value={filters.query}
+              onChange={(e) => handleInputChange("query", e.target.value)}
+            />
+          </div>
+
+          {/* Sort By */}
+          <div>
+            <Label htmlFor="sort-by" className="text-sm">
+              Sort By
+            </Label>
+            <Select value={filters.sortBy || undefined} onValueChange={(v) => handleInputChange("sortBy", v)}>
+              <SelectTrigger id="sort-by">
+                <SelectValue placeholder="Sort by..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Most Recent</SelectItem>
+                <SelectItem value="popular">Most Popular</SelectItem>
+                <SelectItem value="relevance">Most Relevant</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Media Type Filter */}
+          <div>
+            <Label htmlFor="media-type" className="text-sm">
+              Media Type
+            </Label>
+            <Select value={filters.mediaType || undefined} onValueChange={(v) => handleInputChange("mediaType", v)}>
+              <SelectTrigger id="media-type">
+                <SelectValue placeholder="All media types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="photo">Photos</SelectItem>
+                <SelectItem value="video">Videos</SelectItem>
+                <SelectItem value="audio">Audio</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <Accordion type="single" collapsible className="w-full">
-            {/* Organization Filters */}
-            <AccordionItem value="organization">
-              <AccordionTrigger>Organization & Department</AccordionTrigger>
+            {/* Department Filter */}
+            <AccordionItem value="department">
+              <AccordionTrigger>Department</AccordionTrigger>
               <AccordionContent className="space-y-3">
                 <div>
                   <Label htmlFor="department" className="text-sm">
                     Department
                   </Label>
-                  <Select value={filters.department} onValueChange={(v) => handleInputChange("department", v)}>
+                  <Select value={filters.department || undefined} onValueChange={(v) => handleInputChange("department", v)}>
                     <SelectTrigger id="department">
-                      <SelectValue placeholder="Select department" />
+                      <SelectValue placeholder="All departments" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="eb">EB (Electricity Board)</SelectItem>
-                      <SelectItem value="nh">NH (National Highways)</SelectItem>
-                      <SelectItem value="telecom">Telecom</SelectItem>
-                      <SelectItem value="hr">Human Resources</SelectItem>
-                      <SelectItem value="finance">Finance</SelectItem>
+                      {Array.isArray(departments) && departments.map((dept) => (
+                        <SelectItem key={dept.id} value={dept.name}>
+                          {dept.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                </div>
-
-                <div>
-                  <Label htmlFor="ministry" className="text-sm">
-                    Ministry / Secretariat
-                  </Label>
-                  <Input
-                    id="ministry"
-                    placeholder="e.g., Ministry of Education"
-                    value={filters.ministry}
-                    onChange={(e) => handleInputChange("ministry", e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="corporate" className="text-sm">
-                    Corporate Name
-                  </Label>
-                  <Input
-                    id="corporate"
-                    placeholder="e.g., TCS, Infosys"
-                    value={filters.corporateName}
-                    onChange={(e) => handleInputChange("corporateName", e.target.value)}
-                  />
                 </div>
               </AccordionContent>
             </AccordionItem>
@@ -171,44 +213,8 @@ export function SearchFiltersComponent({ filters, onFilterChange, onSearch }: Se
                   <Input
                     id="area"
                     placeholder="e.g., Mylapore"
-                    value={filters.areaName}
-                    onChange={(e) => handleInputChange("areaName", e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="street" className="text-sm">
-                    Street Name
-                  </Label>
-                  <Input
-                    id="street"
-                    placeholder="e.g., Marina Beach Road"
-                    value={filters.streetName}
-                    onChange={(e) => handleInputChange("streetName", e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="pincode" className="text-sm">
-                    Pin Code
-                  </Label>
-                  <Input
-                    id="pincode"
-                    placeholder="e.g., 600004"
-                    value={filters.pinCode}
-                    onChange={(e) => handleInputChange("pinCode", e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="location-name" className="text-sm">
-                    Location Name
-                  </Label>
-                  <Input
-                    id="location-name"
-                    placeholder="e.g., Marina Beach, Fort Museum"
-                    value={filters.locationName}
-                    onChange={(e) => handleInputChange("locationName", e.target.value)}
+                    value={filters.area}
+                    onChange={(e) => handleInputChange("area", e.target.value)}
                   />
                 </div>
               </AccordionContent>
@@ -236,16 +242,16 @@ export function SearchFiltersComponent({ filters, onFilterChange, onSearch }: Se
                     <label className="text-xs text-muted-foreground">From</label>
                     <Input
                       type="date"
-                      value={filters.dateRangeStart}
-                      onChange={(e) => handleInputChange("dateRangeStart", e.target.value)}
+                      value={filters.dateFrom}
+                      onChange={(e) => handleInputChange("dateFrom", e.target.value)}
                     />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground">To</label>
                     <Input
                       type="date"
-                      value={filters.dateRangeEnd}
-                      onChange={(e) => handleInputChange("dateRangeEnd", e.target.value)}
+                      value={filters.dateTo}
+                      onChange={(e) => handleInputChange("dateTo", e.target.value)}
                     />
                   </div>
                 </div>

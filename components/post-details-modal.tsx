@@ -1,11 +1,13 @@
 "use client"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { MessageCircle, Share2, Download, Zap, MapPin, Calendar, Users } from "lucide-react"
 import { CommentSection } from "./comment-section"
-import { useState as useStateHook } from "react"
+import { useState, useEffect } from "react"
+import { postsApi } from "@/lib/api"
+import { toast } from "sonner"
 
 interface PostDetailsModalProps {
   isOpen: boolean
@@ -13,23 +15,112 @@ interface PostDetailsModalProps {
   postId: string
 }
 
-export function PostDetailsModal({ isOpen, onClose, postId }: PostDetailsModalProps) {
-  const [isLiked, setIsLiked] = useStateHook(false)
-  const [thankCount, setThankCount] = useStateHook(342)
-  const [isShared, setIsShared] = useStateHook(false)
+interface PostData {
+  id: number
+  content: string
+  media_url: string | null
+  media_type: string
+  author_name: string
+  author_username: string
+  author_avatar: string
+  department_name: string | null
+  city: string
+  state: string
+  country: string
+  post_date: string
+  likes_count: number
+  comments_count: number
+  shares_count: number
+  isLikedByUser: boolean
+  isSharedByUser: boolean
+}
 
-  const handleThank = () => {
-    setIsLiked(!isLiked)
-    setThankCount(isLiked ? thankCount - 1 : thankCount + 1)
+export function PostDetailsModal({ isOpen, onClose, postId }: PostDetailsModalProps) {
+  const [post, setPost] = useState<PostData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Load post data
+  useEffect(() => {
+    if (isOpen && postId) {
+      loadPost()
+    } else if (!isOpen) {
+      // Reset state when modal closes
+      setPost(null)
+      setIsLoading(true)
+    }
+  }, [isOpen, postId])
+
+  const loadPost = async () => {
+    setIsLoading(true)
+    try {
+      console.log('Loading post with ID:', postId)
+      const response = await postsApi.getById(postId)
+      console.log('Post API response:', response)
+      if (response.success && response.data) {
+        setPost(response.data) // Post data is directly in response.data
+      } else {
+        console.error('Post load failed:', response.message)
+        toast.error(response.message || 'Failed to load post details')
+      }
+    } catch (error) {
+      console.error('Failed to load post:', error)
+      toast.error('Failed to load post details')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleShare = () => {
-    setIsShared(!isShared)
-    alert("Sharing content: " + (isShared ? "Share removed" : "Content shared successfully"))
+  const handleThank = async () => {
+    if (!post) return
+    try {
+      const response = await postsApi.toggleLike(post.id)
+      if (response.success) {
+        setPost({ ...post, isLikedByUser: !post.isLikedByUser, likes_count: post.isLikedByUser ? post.likes_count - 1 : post.likes_count + 1 })
+      } else {
+        console.error('Toggle like failed:', response)
+        toast.error(response.message || 'Failed to update like')
+      }
+    } catch (error) {
+      console.error('Like error:', error)
+      toast.error('Failed to update like')
+    }
+  }
+
+  const handleShare = async () => {
+    if (!post) return
+    try {
+      const response = await postsApi.share(post.id)
+      if (response.success) {
+        setPost({ ...post, isSharedByUser: !post.isSharedByUser, shares_count: post.isSharedByUser ? post.shares_count - 1 : post.shares_count + 1 })
+        toast.success(post.isSharedByUser ? 'Share removed' : 'Post shared successfully')
+      }
+    } catch (error) {
+      toast.error('Failed to share post')
+    }
   }
 
   const handleDownload = () => {
-    alert("Downloading content...")
+    if (post?.media_url) {
+      window.open(post.media_url, '_blank')
+    } else {
+      toast.error('No media to download')
+    }
+  }
+
+  if (isLoading || !post) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-2xl max-h-screen overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Post Details</DialogTitle>
+            <DialogDescription>Loading post information...</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center py-12">
+            <p className="text-muted-foreground">Loading post...</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
   }
 
   return (
@@ -37,14 +128,23 @@ export function PostDetailsModal({ isOpen, onClose, postId }: PostDetailsModalPr
       <DialogContent className="max-w-2xl max-h-screen overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Post Details</DialogTitle>
+          <DialogDescription>View post information, comments, and interactions</DialogDescription>
           <DialogClose />
         </DialogHeader>
 
         <div className="space-y-6">
           {/* Post Media */}
-          <div className="aspect-video bg-muted rounded-lg overflow-hidden">
-            <img src="/placeholder.svg" alt="Post content" className="w-full h-full object-cover" />
-          </div>
+          {post.media_url && (
+            <div className="aspect-video bg-muted rounded-lg overflow-hidden">
+              {post.media_type === 'video' ? (
+                <video src={post.media_url} controls className="w-full h-full object-cover" />
+              ) : post.media_type === 'audio' ? (
+                <audio src={post.media_url} controls className="w-full" />
+              ) : (
+                <img src={post.media_url} alt="Post content" className="w-full h-full object-cover" />
+              )}
+            </div>
+          )}
 
           {/* Post Info */}
           <div className="space-y-4">
@@ -52,57 +152,57 @@ export function PostDetailsModal({ isOpen, onClose, postId }: PostDetailsModalPr
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Avatar>
-                  <AvatarFallback className="bg-primary text-primary-foreground">SJ</AvatarFallback>
+                  <AvatarFallback className="bg-primary text-primary-foreground">
+                    {post.author_avatar || post.author_name.substring(0, 2).toUpperCase()}
+                  </AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="font-semibold text-sm">Sarah Johnson</p>
-                  <p className="text-xs text-muted-foreground">@sarahjohn</p>
+                  <p className="font-semibold text-sm">{post.author_name}</p>
+                  <p className="text-xs text-muted-foreground">@{post.author_username}</p>
                 </div>
               </div>
-              <Button variant="outline" className="bg-transparent">
-                Follow
-              </Button>
             </div>
 
             {/* Post Content */}
-            <div>
-              <p className="text-sm leading-relaxed">
-                Amazing sunset view from Marina Beach! The colors today were incredible. Perfect evening for a walk with
-                friends and capturing beautiful moments.
-              </p>
-            </div>
+            {post.content && (
+              <div>
+                <p className="text-sm leading-relaxed">{post.content}</p>
+              </div>
+            )}
 
             {/* Post Metadata */}
             <Card className="p-3 bg-muted/50 border-border/50 space-y-2">
               <div className="flex items-center gap-2 text-sm">
                 <MapPin className="w-4 h-4 text-accent" />
-                <span>Mylapore, Marina Beach, Chennai</span>
+                <span>{post.city}, {post.state}, {post.country}</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="w-4 h-4 text-accent" />
-                <span>December 15, 2024</span>
+                <span>{new Date(post.post_date).toLocaleDateString()}</span>
               </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Users className="w-4 h-4 text-accent" />
-                <span>City Events Department</span>
-              </div>
+              {post.department_name && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Users className="w-4 h-4 text-accent" />
+                  <span>{post.department_name}</span>
+                </div>
+              )}
             </Card>
 
             {/* Interaction Stats */}
             <div className="flex justify-between text-xs text-muted-foreground border-b border-border pb-3">
-              <span>{thankCount} Thanks</span>
-              <span>28 Comments</span>
-              <span>15 Shares</span>
+              <span>{post.likes_count} Thanks</span>
+              <span>{post.comments_count} Comments</span>
+              <span>{post.shares_count} Shares</span>
             </div>
 
             {/* Action Buttons */}
             <div className="grid grid-cols-4 gap-2">
               <Button
                 variant="ghost"
-                className={`gap-2 bg-transparent ${isLiked ? "text-destructive" : "text-muted-foreground hover:text-primary"}`}
+                className={`gap-2 bg-transparent ${post.isLikedByUser ? "text-destructive" : "text-muted-foreground hover:text-primary"}`}
                 onClick={handleThank}
               >
-                <Zap className={`w-4 h-4 ${isLiked ? "fill-current" : ""}`} />
+                <Zap className={`w-4 h-4 ${post.isLikedByUser ? "fill-current" : ""}`} />
                 <span className="hidden sm:inline text-xs">Thanks</span>
               </Button>
               <Button variant="ghost" className="gap-2 bg-transparent text-muted-foreground hover:text-primary">
@@ -111,10 +211,10 @@ export function PostDetailsModal({ isOpen, onClose, postId }: PostDetailsModalPr
               </Button>
               <Button
                 variant="ghost"
-                className={`gap-2 bg-transparent ${isShared ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+                className={`gap-2 bg-transparent ${post.isSharedByUser ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
                 onClick={handleShare}
               >
-                <Share2 className={`w-4 h-4 ${isShared ? "fill-current" : ""}`} />
+                <Share2 className={`w-4 h-4 ${post.isSharedByUser ? "fill-current" : ""}`} />
                 <span className="hidden sm:inline text-xs">Share</span>
               </Button>
               <Button
